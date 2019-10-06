@@ -1,0 +1,240 @@
+---
+title: "DATA 621 Homework 2"
+author: "Yohannes Deboch "
+date: "October 10, 2019"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(caret)
+library(pROC)
+library(ggplot2)
+```
+
+### Introduction
+
+In this assignment  I have assumed that 0 is negative and 1 is positive, but this could be reversed with valid outcomes. 
+
+### 1-2. Data Set
+
+The  `classification-output-data.csv` contains 181 observations with 11 variables. We will be considereing three observations  for this work  - `class` (actual class for the observation), `scored.class` (predicted class for the observation), and `scored.probability` (predicted probability of success for the observation).
+
+Raaw confusion matrix using `table()`:
+
+```{r echo=FALSE}
+dt <- read.csv('F:/CUNY/GitHub/CUNY-DATA602/hw2/classification-output-data.csv')
+
+dt <- dt %>% select(class, predicted=scored.class, prob=scored.probability)
+
+table(dt[,1:2])
+```
+
+From the obseravtion we can understand that , rows represent actual class values of 0 or 1. Columns represent predicted class values of 0 or 1. So in the top left corner 119 is the number of observations where the class was correctly predicted to be 0. The top right corner shows 5 observations where the class of 0 was incorrectly predicted as 1. 
+
+Bsed on the assumption of 0 as a negative class and 1 as a positive class we have: 
+
+- 119 true negative observations (TN)
+- 5 false positive observations (FP)
+- 30 false negative observations (FN)
+- 27 true positive observations (TP)
+
+### 3-7. Calculating Accuracy, Classification Error Rate, Precision, Sensitivity and Specificity
+
+```{r}
+TF.values <- function(tbl, actual, predicted, pos_value, neg_value){
+   conf.matrix <- as.data.frame(table(tbl[,c(actual)], tbl[,c(predicted)]))
+   FP <- filter(conf.matrix, Var1==neg_value & Var2==pos_value)$Freq
+   FN <- filter(conf.matrix, Var1==pos_value & Var2==neg_value)$Freq
+   TP <- filter(conf.matrix, Var1==pos_value & Var2==pos_value)$Freq
+   TN <- filter(conf.matrix, Var1==neg_value & Var2==neg_value)$Freq
+
+   # Reset to 0 if no category was found
+   if (length(FN)==0) FN<-0;
+   if (length(FP)==0) FP<-0;
+   if (length(TP)==0) TP<-0;
+   if (length(TN)==0) TN<-0;
+   return (list(TP=TP, FP=FP, TN=TN, FN=FN))
+}
+
+# Define values to treat as positive or negative
+pos_value <- 1
+neg_value <- 0
+```
+
+From this we can understand that the function only works for observations with  two classes.
+
+#### Accuracy
+
+```{r warning=FALSE}
+accuracy <- function(tbl, actual, predicted, pos_value, neg_value){
+  tf <- TF.values(tbl, actual, predicted, pos_value, neg_value)
+  return ((tf$TP+tf$TN)/(tf$TP+tf$TN+tf$FP+tf$FN))
+}
+
+(acc <- accuracy(dt, actual='class', predicted='predicted', 
+                 pos_value, neg_value))
+```
+
+#### Classification Error Rate
+
+```{r warning=FALSE}
+error.rate <- function(tbl, actual, predicted, pos_value, neg_value){
+  tf <- TF.values(tbl, actual, predicted, pos_value, neg_value)
+  return ((tf$FP+tf$FN)/(tf$TP+tf$TN+tf$FP+tf$FN))
+}
+
+(cer <- error.rate(dt, actual='class', predicted='predicted', 
+                   pos_value, neg_value))
+```
+
+when we add accuracy and classification error rate we should get one .
+
+```{r warning=FALSE}
+acc + cer
+```
+
+#### Precision
+
+```{r warning=FALSE}
+precision <- function(tbl, actual, predicted, pos_value, neg_value){
+  tf <- TF.values(tbl, actual, predicted, pos_value, neg_value)
+  return (tf$TP/(tf$TP+tf$FP))
+}
+
+(pre <- precision(dt, actual='class', predicted='predicted', 
+                  pos_value, neg_value))
+```
+
+#### Sensitivity
+
+```{r warning=FALSE}
+sensitivity <- function(tbl, actual, predicted, pos_value, neg_value){
+  tf <- TF.values(tbl, actual, predicted, pos_value, neg_value)
+  return (tf$TP/(tf$TP+tf$FN))
+}
+
+(sens <- sensitivity(dt, actual='class', predicted='predicted', 
+                     pos_value, neg_value))
+```
+
+#### Specificity
+
+```{r warning=FALSE}
+specificity <- function(tbl, actual, predicted, pos_value, neg_value){
+  tf <- TF.values(tbl, actual, predicted, pos_value, neg_value)
+  return (tf$TN/(tf$TN+tf$FP))
+}
+
+(spec <- specificity(dt, actual='class', predicted='predicted', 
+                     pos_value, neg_value))
+```
+
+### 8-9. F1 Score
+
+```{r warning=FALSE}
+f1.score <- function(tbl, actual, predicted, pos_value, neg_value){
+  p <- precision(dt, actual='class', predicted='predicted', 
+                 pos_value, neg_value)
+  s <- sensitivity(dt, actual='class', predicted='predicted', 
+                   pos_value, neg_value)
+  return ((2*p*s)/(p+s))
+}
+
+(f1 <- f1.score(dt, actual='class', predicted='predicted', 
+                pos_value, neg_value))
+```
+
+Both _Precision_ and _Sensitivity_ have a range from 0 to 1. Consider that if $a>0$ and $0<b<1$, then $ab<a$ (a fraction of any positive number will be smaller than the original number).
+
+Then $Precision \times Sensitivity < Precision$ and $Precision \times Sensitivity < Sensitivity$. 
+
+Then $Precision \times Sensitivity+Precision \times Sensitivity < Precision + Sensitivity$, or
+
+$2\times Precision \times Sensitivity < Precision + Sensitivity$.
+
+The fraction of these two values will be lower than $1$. Also, since both values are positive, $F1\ score$ will be positive. If $Precision$ is zero, then $Sensitivity$ is zero and $F1\ Score$ is not defined. If $Precision$ is one and $Sensitivity$ is one, then $F1\ Score$ is one.
+
+So we have $0<F\ Score\le1$.
+
+### 10. ROC Function
+
+In this section we will be calculating  specificity and sensivity on the absis of  provided probability by iterating from 0 to 1 at 0.01 interval. 
+
+```{r warning=FALSE}
+manual.roc <- function(tbl, actual, prob, pos_value, neg_value) {
+  tbl2 <- tbl[, c(actual, prob)]
+  tbl2 <- cbind(tbl2, predicted = rep(0, nrow(tbl)))
+
+  cutoff <- seq(0,1,0.01)
+  sens <- rep(0,length(cutoff))
+  spec <- rep(0,length(cutoff))
+  for (i in 1:length(cutoff)) {
+    tbl3 <- within(tbl2, predicted[prob>cutoff[i]] <- 1)
+    sens[i] <- sensitivity(tbl3, actual='class', 
+                           predicted='predicted', pos_value, neg_value)
+    spec[i] <- specificity(tbl3, actual='class', 
+                           predicted='predicted', pos_value, neg_value)
+  }
+  roc.values <- as.data.frame(cbind(cutoff, sens, spec))
+  roc.values[,'spec'] <- 1 - roc.values[,'spec']
+  
+  # Prepare plot
+  pl <- ggplot(arrange(roc.values, desc(cutoff)), aes(x=spec, y=sens)) + 
+    geom_step() + 
+    xlab("1-Specificity") + ylab("Sensitivity") + 
+    ggtitle("ROC Curve")
+  
+  # Find AUC
+  auc <- roc.values %>% 
+    arrange(desc(cutoff)) %>%
+    mutate(auc =  (spec-lag(spec))*sens) %>%
+    replace(is.na(.),0) %>%
+    summarize(sum(auc))
+  
+  return (list(plot=pl, AUC=auc))
+}
+```
+
+Let us run the function and review plot and AUC value.
+
+```{r}
+mROC <- manual.roc(dt, 'class', 'prob', pos_value, neg_value)
+mROC$plot
+mROC$AUC
+```
+
+### 11. Classification Metrics
+
+ Is provided below unsing built-in functions.
+### 12. `caret` Package
+
+`caret` package helps us to calculate  sensitivity and specificity.
+
+```{r}
+caret::sensitivity(as.factor(dt$predicted), as.factor(dt$class), positive='1')
+caret::specificity(as.factor(dt$predicted), as.factor(dt$class), negative='0')
+```
+
+`confusionMatrix`function can also be used .
+
+```{r}
+(cm <- confusionMatrix(dt$predicted, dt$class, positive='1'))
+```
+
+```{r}
+cm$byClass
+```
+
+We can see F1 score, Precision and other values and with higher precision than the summary output above. All of the values match our calculations.
+
+### 13. `pROC` Package
+
+Let us try the `pROC` package.
+
+```{r}
+roc(dt$class, dt$prob, levels=c(0,1), percent=TRUE, plot=TRUE, ci=TRUE)
+```
